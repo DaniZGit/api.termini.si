@@ -1,30 +1,30 @@
 version: "3"
 services:
-  database:
-    image: postgis/postgis:16-master
-    restart: always
-    ports:
-      - 5432:5432
-    # Required when running on platform other than amd64, like Apple M1/M2:
-    # platform: linux/amd64
-    volumes:
-      - ./database:/var/lib/postgresql/data
-    environment:
-      POSTGRES_USER: "postgres"
-      POSTGRES_PASSWORD: "postgres"
-      POSTGRES_DB: "termini.si"
+  # database:
+  #   image: postgis/postgis:16-master
+  #   restart: always
+  #   ports:
+  #     - 5432:5432
+  #   # Required when running on platform other than amd64, like Apple M1/M2:
+  #   # platform: linux/amd64
+  #   volumes:
+  #     - ./database:/var/lib/postgresql/data
+  #   environment:
+  #     POSTGRES_USER: "postgres"
+  #     POSTGRES_PASSWORD: "postgres"
+  #     POSTGRES_DB: "termini.si"
 
   directus:
     # image: directus/directus:10.12.1
     build:
       context: ./
     restart: always
-    depends_on:
-      - database
+    # depends_on:
+    #   - database
     ports:
       - 8055:8055
     volumes:
-      - ./database:/directus/database
+      # - ./database:/directus/database
       - ./uploads:/directus/uploads
       - ./extensions:/directus/extensions
       - ./snapshots:/directus/snapshots
@@ -33,11 +33,11 @@ services:
       ADMIN_EMAIL: "admin@example.com"
       ADMIN_PASSWORD: "d1r3ctu5"
       DB_CLIENT: "pg"
-      DB_HOST: "database"
-      DB_PORT: "5432"
-      DB_USER: "postgres"
-      DB_PASSWORD: "postgres"
-      DB_DATABASE: "termini.si"
+      DB_HOST: "aws-0-eu-central-1.pooler.supabase.com"
+      DB_PORT: "6543"
+      DB_USER: "postgres.kwqunocvrqnbwlqvjtxa"
+      DB_PASSWORD: "sevhOkU9AZVWFnvZ"
+      DB_DATABASE: "postgres"
       WEBSOCKETS_ENABLED: "true"
 
       EXTENSIONS_AUTO_RELOAD: "true"
@@ -47,10 +47,10 @@ services:
 
       STORAGE_LOCATIONS: "s3"
       STORAGE_S3_DRIVER: "s3"
-      STORAGE_S3_KEY: "1fe6a2b1dbfd22888a2965d39e7d1f73"
-      STORAGE_S3_SECRET: "21582e18947bade8481d3f4e9aa3bcd3d7d863ab8ce936924b0799d50b6f2c27"
-      STORAGE_S3_ENDPOINT: "https://43618a8104c6c47513ac3ef37665f8ac.r2.cloudflarestorage.com"
-      STORAGE_S3_BUCKET: "sport-reserve"
+      STORAGE_S3_KEY: "e614bdaedfba5b217e63d047898c2184"
+      STORAGE_S3_SECRET: "d2ce3998609d9bb92556fd693396f628082ebf80ea743fb682d57235b800b032"
+      STORAGE_S3_ENDPOINT: "https://43618a8104c6c47513ac3ef37665f8ac.r2.cloudflarestorage.com/local-termini-si"
+      STORAGE_S3_BUCKET: "local-termini-si"
       STORAGE_S3_REGION: "auto"
       STORAGE_S3_ROOT: "assets"
 
