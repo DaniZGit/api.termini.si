@@ -1,5 +1,4 @@
 import { defineHook } from "@directus/extensions-sdk";
-import {} from "./";
 
 export default defineHook(({ filter, action }, { services, logger }) => {
   const { ItemsService } = services;
