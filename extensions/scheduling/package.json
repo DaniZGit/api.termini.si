@@ -1,66 +1,66 @@
 {
-	"name": "scheduling",
-	"description": "Please enter a description for your extension",
-	"icon": "extension",
-	"version": "1.0.0",
-	"keywords": [
-		"directus",
-		"directus-extension",
-		"directus-extension-bundle"
-	],
-	"type": "module",
-	"files": [
-		"dist"
-	],
-	"directus:extension": {
-		"type": "bundle",
-		"path": {
-			"app": "dist/app.js",
-			"api": "dist/api.js"
-		},
-		"entries": [
-			{
-				"type": "operation",
-				"name": "operation-create-dates-and-slots",
-				"source": {
-					"app": "src/operation-create-dates-and-slots/app.ts",
-					"api": "src/operation-create-dates-and-slots/api.ts"
-				}
-			},
-			{
-				"type": "operation",
-				"name": "operation-create-slot-definitions",
-				"source": {
-					"app": "src/operation-create-slot-definitions/app.ts",
-					"api": "src/operation-create-slot-definitions/api.ts"
-				}
-			},
-			{
-				"type": "hook",
-				"name": "hooks-on-date-definitions",
-				"source": "src/hooks-on-date-definitions/index.ts"
-			},
-			{
-				"type": "hook",
-				"name": "hooks-on-schedules",
-				"source": "src/hooks-on-schedules/index.ts"
-			}
-		],
-		"host": "^10.10.0"
-	},
-	"scripts": {
-		"build": "directus-extension build",
-		"dev": "directus-extension build -w --no-minify",
-		"link": "directus-extension link",
-		"add": "directus-extension add"
-	},
-	"devDependencies": {
-		"@directus/extensions-sdk": "12.0.2",
-		"@types/node": "^22.5.4",
-		"typescript": "^5.6.2",
-		"vue": "^3.5.4"
-	},
-	"dependencies": {
-		"@directus/errors": "^1.0.0"
-	}
+  "name": "scheduling",
+  "description": "Please enter a description for your extension",
+  "icon": "extension",
+  "version": "1.0.0",
+  "keywords": [
+    "directus",
+    "directus-extension",
+    "directus-extension-bundle"
+  ],
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "directus:extension": {
+    "type": "bundle",
+    "path": {
+      "app": "dist/app.js",
+      "api": "dist/api.js"
+    },
+    "entries": [
+      {
+        "type": "operation",
+        "name": "operation-create-dates-and-slots",
+        "source": {
+          "app": "src/operation-create-dates-and-slots/app.ts",
+          "api": "src/operation-create-dates-and-slots/api.ts"
+        }
+      },
+      {
+        "type": "operation",
+        "name": "operation-create-slot-definitions",
+        "source": {
+          "app": "src/operation-create-slot-definitions/app.ts",
+          "api": "src/operation-create-slot-definitions/api.ts"
+        }
+      },
+      {
+        "type": "hook",
+        "name": "hooks-on-date-definitions",
+        "source": "src/hooks-on-date-definitions/index.ts"
+      },
+      {
+        "type": "hook",
+        "name": "hooks-on-schedules",
+        "source": "src/hooks-on-schedules/index.ts"
+      }
+    ],
+    "host": "^10.10.0"
+  },
+  "scripts": {
+    "build": "directus-extension build",
+    "dev": "directus-extension build -w --no-minify",
+    "link": "directus-extension link",
+    "add": "directus-extension add"
+  },
+  "devDependencies": {
+    "@directus/extensions-sdk": "12.0.2",
+    "@types/node": "^22.5.5",
+    "typescript": "^5.6.2",
+    "vue": "^3.5.6"
+  },
+  "dependencies": {
+    "@directus/errors": "^1.0.0"
+  }
 }

@@ -162,33 +162,42 @@ const handleTypeSports = async (
 ) => {
   const logger = context.logger;
   const { ItemsService } = context.services;
-  const schedulesService = new ItemsService("schedules", {
+  const sportCourtsService = new ItemsService("sport_courts", {
     schema: schema,
     accountability: context.accountability,
   });
 
-  const [schedules, error] = await tryCatcher<any[]>(
-    schedulesService.readByQuery({
+  const [sportCourts, error] = await tryCatcher<any[]>(
+    sportCourtsService.readByQuery({
       fields: [
         "id",
-        "date_definitions.*",
-        "date_definitions.slot_definitions.*",
-        "dates.*",
+        "schedule.id",
+        "schedule.date_definitions.*",
+        "schedule.date_definitions.slot_definitions.*",
+        "schedule.dates.*",
       ],
       filter: {
-        sport_court: {
+        id: {
           _in: service.sport_courts,
+        },
+        schedule: {
+          _nnull: true,
         },
       },
     })
   );
   if (error) {
-    logger.error(`Something went wrong while reading schedules: ${error}`);
+    logger.error(`Something went wrong while reading sport_courts: ${error}`);
     return;
   }
 
-  schedules.forEach(async (schedule) => {
-    await createDatesAndSlots(context, schema, triggerData, schedule);
+  sportCourts.forEach(async (sportCourt) => {
+    await createDatesAndSlots(
+      context,
+      schema,
+      triggerData,
+      sportCourt.schedule
+    );
   });
 };
 
@@ -200,33 +209,42 @@ const handleTypeHairdressing = async (
 ) => {
   const logger = context.logger;
   const { ItemsService } = context.services;
-  const schedulesService = new ItemsService("schedules", {
+  const hairdressersService = new ItemsService("hairdressers", {
     schema: schema,
     accountability: context.accountability,
   });
 
-  const [schedules, error] = await tryCatcher<any[]>(
-    schedulesService.readByQuery({
+  const [hairdressers, error] = await tryCatcher<any[]>(
+    hairdressersService.readByQuery({
       fields: [
         "id",
-        "date_definitions.*",
-        "date_definitions.slot_definitions.*",
-        "dates.*",
+        "schedule.id",
+        "schedule.date_definitions.*",
+        "schedule.date_definitions.slot_definitions.*",
+        "schedule.dates.*",
       ],
       filter: {
-        hairdresser: {
+        id: {
           _in: service.hairdressers,
+        },
+        schedule: {
+          _nnull: true,
         },
       },
     })
   );
   if (error) {
-    logger.error(`Something went wrong while reading schedules: ${error}`);
+    logger.error(`Something went wrong while reading hairdressers: ${error}`);
     return;
   }
 
-  schedules.forEach(async (schedule) => {
-    await createDatesAndSlots(context, schema, triggerData, schedule);
+  hairdressers.forEach(async (hairdresser) => {
+    await createDatesAndSlots(
+      context,
+      schema,
+      triggerData,
+      hairdresser.schedule
+    );
   });
 };
 
@@ -238,33 +256,37 @@ const handleTypeWellness = async (
 ) => {
   const logger = context.logger;
   const { ItemsService } = context.services;
-  const schedulesService = new ItemsService("schedules", {
+  const wellnessService = new ItemsService("wellness", {
     schema: schema,
     accountability: context.accountability,
   });
 
-  const [schedules, error] = await tryCatcher<any[]>(
-    schedulesService.readByQuery({
+  const [wellness, error] = await tryCatcher<any[]>(
+    wellnessService.readByQuery({
       fields: [
         "id",
-        "date_definitions.*",
-        "date_definitions.slot_definitions.*",
-        "dates.*",
+        "schedule.id",
+        "schedule.date_definitions.*",
+        "schedule.date_definitions.slot_definitions.*",
+        "schedule.dates.*",
       ],
       filter: {
-        wellness: {
+        id: {
           _in: service.wellnesses,
+        },
+        schedule: {
+          _nnull: true,
         },
       },
     })
   );
   if (error) {
-    logger.error(`Something went wrong while reading schedules: ${error}`);
+    logger.error(`Something went wrong while reading wellness: ${error}`);
     return;
   }
 
-  schedules.forEach(async (schedule) => {
-    await createDatesAndSlots(context, schema, triggerData, schedule);
+  wellness.forEach(async (wellns) => {
+    await createDatesAndSlots(context, schema, triggerData, wellns.schedule);
   });
 };
 
