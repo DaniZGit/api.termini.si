@@ -1,4 +1,14 @@
 import { defineEndpoint } from "@directus/extensions-sdk";
+import { format, isAfter, isBefore, isEqual, parse } from "date-fns";
+import { toZonedTime } from "date-fns-tz";
+import { z } from "zod";
+
+const SlotSchema = z.object({
+  date: z.string(),
+  time_start: z.string(),
+  time_end: z.string(),
+  slot_definition: z.string(),
+});
 
 export default defineEndpoint((router, context) => {
   router.patch("/", async (_req, res) => {
@@ -11,55 +21,56 @@ export default defineEndpoint((router, context) => {
     if (!_req.body.slots || !Array.isArray(_req.body.slots))
       return res.status(400).send("Wrong data or wrong data type");
 
-    if (_req.body.service != null && typeof _req.body.service != "string") {
-      _req.body.service = null;
-      _req.body.slots = [];
-    }
+    // validate each slot payload
+    const invalidSlotFound = _req.body.slots.some(
+      (slot: any) => !SlotSchema.safeParse(slot).success
+    );
+    if (invalidSlotFound)
+      return res.status(400).send("Wrong data or wrong data type");
 
     const schema = await context.getSchema();
 
-    // get user cart
-    const [cartID, readCartError] = await readOrCreateUserCart(
-      _req,
-      context,
-      schema
-    );
-    if (readCartError) return errorResponse(res, readCartError);
+    // get user
+    const [user, getUserError] = await getUser(_req, context, schema);
+    if (getUserError) return errorResponse(res, getUserError);
 
-    // validate and update cart
-    const updateCartError = await updateCart(_req, context, schema, cartID);
-    if (updateCartError) return errorResponse(res, updateCartError);
-
-    // get slots in the cart
-    const [slots, readCartSlotsError] = await readCartSlots(
+    // validate and create slots
+    const slotValidationError = await validateSlots(
       context,
       schema,
-      cartID
+      user,
+      _req.body.slots
     );
-    if (readCartSlotsError) return errorResponse(res, readCartSlotsError);
+    if (slotValidationError) return errorResponse(res, slotValidationError);
 
-    return res.status(200).send({ slots: slots });
+    // read "held" slots
+    const [heldSlots, slotsReadError] = await readUserHeldSlots(
+      context,
+      schema,
+      user
+    );
+    if (slotsReadError && typeof slotsReadError == "string")
+      return errorResponse(res, slotsReadError);
+
+    return res.status(200).send({ slots: heldSlots });
   });
 });
 
-const readOrCreateUserCart = async (req: any, context: any, schema: any) => {
-  const { ItemsService, UsersService } = context.services;
+const getUser = async (req: any, context: any, schema: any) => {
+  const { UsersService } = context.services;
   const usersService = new UsersService({
-    schema: schema,
-  });
-  const cartsService = new ItemsService("carts", {
     schema: schema,
   });
 
   // get user with cart
   const [user, readError] = await tryCatcher<any>(
     usersService.readOne(req.accountability?.user, {
-      fields: ["id", "cart"],
+      fields: ["id"],
     })
   );
   if (readError) {
     context.logger.error(
-      `Something went wrong while fetching user(${req.accountability?.user}) cart reservation: ${readError}`
+      `Something went wrong while fetching user(${req.accountability?.user})`
     );
     return [
       null,
@@ -67,264 +78,375 @@ const readOrCreateUserCart = async (req: any, context: any, schema: any) => {
     ];
   }
 
-  if (!user.cart) {
-    // user doesn't have a cart, so we create one
-    const [cartID, createError] = await tryCatcher(
-      cartsService.createOne({
-        time_slots: [],
-      })
-    );
-    if (createError) {
-      context.logger.error(
-        `Something went wrong while creating a cart for user(${req.accountability?.user}): ${createError}`
-      );
-      return [null, "Internal server error while creating user cart"];
-    }
-
-    // link the newly created cart to the user
-    const [_, updateError] = await tryCatcher<string>(
-      usersService.updateOne(req.accountability?.user, {
-        cart: cartID,
-      })
-    );
-    if (updateError) {
-      context.logger.error(
-        `Something went wrong while updating user(${req.accountability?.user}) cart(${cartID}): ${updateError}`
-      );
-      return [null, "Internal server error while updating user's cart"];
-    }
-
-    return [cartID, null];
-  }
-
-  // user has a cart
-  return [user.cart, null];
+  return [user, ""];
 };
 
-const updateCart = async (req: any, context: any, schema: any, cartID: any) => {
-  // reserve selected slots
-  const createError = await addSlotsToCart(
-    schema,
-    context,
-    req.body.slots,
-    cartID
-  );
-  if (createError) {
-    context.logger.error(
-      `Something went wrong while adding slots to the cart: ${createError}`
-    );
-    return "Internal server error while adding slots to the cart";
-  }
-
-  // remove other slots from the cart
-  const deleteError = await deleteSlotsFromCart(
-    schema,
-    context,
-    req.body.slots,
-    cartID
-  );
-  if (deleteError) {
-    context.logger.error(
-      `Something went wrong while removing slots from the cart: ${deleteError}`
-    );
-    return "Internal server error while removing slots from the cart";
-  }
-
-  // update cart date_updated field
-  await updateCartDateField(schema, context, cartID, req.body.service);
-
-  return null;
-};
-
-const readCartSlots = async (context: any, schema: any, cartID: string) => {
+const validateSlots = async (
+  context: any,
+  schema: any,
+  user: any,
+  slots: any[]
+) => {
   const { ItemsService } = context.services;
-  const slotsService = new ItemsService("slots", {
+  const slotService = new ItemsService("slots", {
+    schema: schema,
+  });
+  const slotDefinitionService = new ItemsService("slot_definitions", {
+    schema: schema,
+  });
+  const reservationService = new ItemsService("reservations", {
     schema: schema,
   });
 
-  // get cart's slots
-  const [slots, readError] = await tryCatcher<any>(
-    slotsService.readByQuery({
-      fields: [
-        "id",
-        "start_time",
-        "end_time",
-        "price",
-        "available",
-        "date.date",
-        "date.schedule.id",
-        "date.schedule.title",
-      ],
+  // check if all slots come from same institution
+  const [slotDefinitions, slotDefinitionsReadError] = await tryCatcher<any[]>(
+    slotDefinitionService.readByQuery({
+      fields: ["id", "variant.service.institution"],
       filter: {
-        carts: {
-          carts_id: {
-            _eq: cartID,
+        id: {
+          _in: slots.map((slot) => slot.slot_definition),
+        },
+      },
+    })
+  );
+  if (slotDefinitionsReadError) {
+    context.logger.error(
+      `Something went wrong while reading slot_definitions: ${slotDefinitionsReadError}`
+    );
+    return "Internal server error while fetching slot_definitions";
+  }
+
+  // check if institution ids are same
+  const uniqueInstitutionIds = new Set();
+  slotDefinitions.forEach((slotDefinition) =>
+    uniqueInstitutionIds.add(slotDefinition.variant?.institution)
+  );
+  if (uniqueInstitutionIds.size > 1)
+    return "Cannot reserve slots from different institutions";
+
+  // before adding slots, delete all previous held user slots/reservations
+  const [_, slotsDeleteError] = await tryCatcher(
+    slotService.deleteByQuery({
+      filter: {
+        reservations: {
+          user: {
+            id: {
+              _eq: user.id,
+            },
+          },
+          status: {
+            _eq: "held",
           },
         },
       },
     })
   );
-  if (readError) {
+  if (slotsDeleteError) {
     context.logger.error(
-      `Something went wrong while fetching cart slots: ${readError}`
+      `Something went wrong while deleting old held slots/reservations: ${slotsDeleteError}`
     );
-    return [null, "Internal server error while fetching cart slots"];
+    return "Internal server error while deleting old slots/reservations";
   }
 
-  return [slots, null];
-};
+  // validate each slot
+  // if valid, create it and create a reservation with status "held"
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i];
+    console.log("Slot ", i);
 
-const addSlotsToCart = async (
-  schema: any,
-  context: any,
-  slotIds: any[],
-  cartID: any
-) => {
-  if (!slotIds.length) return null;
-
-  const { ItemsService } = context.services;
-  const slotsService = new ItemsService("slots", {
-    schema: schema,
-  });
-  const cartsSlotsService = new ItemsService("carts_slots", {
-    schema: schema,
-  });
-
-  // get slots that were selected by the user and are available
-  let [slots, readError] = await tryCatcher<any[]>(
-    slotsService.readByQuery({
-      fields: ["id", "users", "carts", "capacity"],
-      filter: {
-        _and: [
-          {
-            id: {
-              _in: slotIds,
-            },
-          },
-          {
-            available: {
-              _eq: true,
-            },
-          },
-          {
-            date: {
-              date: {
-                _gte: "$NOW",
-              },
-            },
-          },
-          {
-            _or: [
-              {
-                carts: {
-                  carts_id: {
-                    _eq: cartID,
-                  },
-                },
-              },
-              {
-                carts: {
-                  carts_id: {
-                    _null: true,
-                  },
-                },
-              },
-            ],
-          },
+    // read extra data for this slot
+    const [slotDefinition, slotDefinitionReadError] = await tryCatcher<any>(
+      slotDefinitionService.readOne(slot.slot_definition, {
+        fields: [
+          "id",
+          "capacity",
+          "variant.service.id",
+          "variant.service.schedule.day_definitions.day_of_week",
+          "variant.service.schedule.day_definitions.time_start",
+          "variant.service.schedule.day_definitions.time_end",
+          "variant.service.schedule.day_definitions.capacity",
         ],
-      },
-    })
-  );
-  if (readError) return readError;
-
-  // do an extra validation regarding slot capacity (if users.length + carts.length < capacity == can reserve)
-  slots =
-    slots?.filter(
-      (slot) => slot.users?.length + slot.carts?.length < slot.capacity
-    ) ?? null;
-
-  if (slots && slots.length) {
-    // here we only add them to the cart, the "available" field will get set in the update hook of the slots collection
-    const [_, createError] = await tryCatcher(
-      cartsSlotsService.createMany(
-        slots.map((slot) => ({
-          slots_id: slot.id,
-          carts_id: cartID,
-        }))
-      )
+      })
     );
-    if (createError) return createError;
+    if (slotDefinitionReadError) {
+      context.logger.error(
+        `Error while reading slot_definitions: ${slotDefinitionReadError}`
+      );
+      return "Internal server error while reading slot_definitions";
+    } else if (
+      !slotDefinition ||
+      !slotDefinition.variant ||
+      !slotDefinition.variant.service ||
+      !slotDefinition.variant.service.schedule ||
+      !slotDefinition.variant.service.schedule.day_definitions ||
+      !slotDefinition.variant.service.schedule.day_definitions.length
+    ) {
+      continue;
+      // return `No slot definition for slot: ${slot.slot_definition}`;
+    }
+
+    console.log("slot definition exists");
+
+    // find matching day_definition
+    console.log(
+      "slot weekday",
+      slot.date,
+      format(toZonedTime(slot.date, "Europe/Ljubljana"), "EEEE").toLowerCase()
+    );
+    const matchingDayDefinition =
+      slotDefinition.variant.service.schedule.day_definitions.find(
+        (dayDefinition: any) =>
+          format(
+            toZonedTime(slot.date, "Europe/Ljubljana"),
+            "EEEE"
+          ).toLowerCase() === dayDefinition.day_of_week
+      );
+    if (!matchingDayDefinition) continue;
+
+    console.log("matched day defitinion");
+    // make sure slot's time start/end matches dayDefinition's time start/end
+    const firstTimeStartDate = timeToDate(slot.time_start);
+    const firstTimeEndDate = timeToDate(slot.time_end);
+    const secondTimeStartDate = timeToDate(matchingDayDefinition.time_start);
+    const secondTimeEndDate = timeToDate(matchingDayDefinition.time_end);
+    const timingsDoQualify =
+      (isBefore(firstTimeStartDate, secondTimeEndDate) ||
+        isEqual(firstTimeStartDate, secondTimeEndDate)) &&
+      (isAfter(firstTimeEndDate, secondTimeStartDate) ||
+        isEqual(firstTimeEndDate, secondTimeStartDate));
+    if (!timingsDoQualify) continue;
+
+    // get slots that intersect with this slot
+    const [intersectingSlots, slotReadError] = await tryCatcher<any[]>(
+      slotService.readByQuery({
+        fields: [
+          "id",
+          "time_start",
+          "time_end",
+          "slot_definition.id",
+          "slot_definition.duration",
+          "slot_definition.capacity",
+        ],
+        filter: {
+          date: {
+            _eq: slot.date,
+          },
+          slot_definition: {
+            variant: {
+              service: {
+                id: {
+                  _eq: slotDefinition.variant?.service?.id,
+                },
+              },
+            },
+          },
+          // filter intersecting slots
+          _or: [
+            {
+              _and: [
+                {
+                  time_start: {
+                    _gt: slot.time_start,
+                  },
+                },
+                {
+                  time_start: {
+                    _lt: slot.time_end,
+                  },
+                },
+              ],
+            },
+            {
+              _and: [
+                {
+                  time_start: {
+                    _gte: slot.time_start,
+                  },
+                },
+                {
+                  time_start: {
+                    _lt: slot.time_end,
+                  },
+                },
+                {
+                  time_end: {
+                    _gt: slot.time_start,
+                  },
+                },
+                {
+                  time_end: {
+                    _gte: slot.time_end,
+                  },
+                },
+              ],
+            },
+            {
+              _and: [
+                {
+                  time_end: {
+                    _gt: slot.time_start,
+                  },
+                },
+                {
+                  time_end: {
+                    _lt: slot.time_end,
+                  },
+                },
+              ],
+            },
+          ],
+          // _and: [
+          //   {
+          //     _or: [
+          //       {
+          //         time_start: {
+          //           _lt: slot.time_end,
+          //         },
+          //       },
+          //       {
+          //         time_start: {
+          //           _eq: slot.time_end,
+          //         },
+          //       },
+          //     ],
+          //   },
+          //   {
+          //     _or: [
+          //       {
+          //         time_end: {
+          //           _gt: slot.time_start,
+          //         },
+          //       },
+          //       {
+          //         time_end: {
+          //           _eq: slot.time_start,
+          //         },
+          //       },
+          //     ],
+          //   },
+          // ],
+        },
+      })
+    );
+    if (slotReadError) {
+      context.logger.error(
+        `Error while reading intersecting slots: ${slotReadError}`
+      );
+      return "Internal server error while reading slots";
+    }
+
+    if (intersectingSlots?.length) {
+      // check if adding this slot would excess schedule dayDefinition specified capacity
+      let capacitySum = intersectingSlots.length;
+      if (capacitySum + 1 > matchingDayDefinition.capacity) {
+        console.log("exceeds dayDefintiion capacity");
+        continue;
+        // return "Cannot add the slot, it exceeded schedule capacity";
+      }
+
+      // check if adding this slot would excess slot_definition specified capacity
+      let slotDefinitionCapacitySum = intersectingSlots.reduce(
+        (sum, intersectingSlot) =>
+          sum + intersectingSlot.slot_definition == slotDefinition.id,
+        0
+      );
+      if (slotDefinitionCapacitySum + 1 > slotDefinition.capacity) {
+        console.log("exceeds slotDefinition capacity");
+        continue;
+        // return "Cannot add the slot, it exceeded slot definition capacity";
+      }
+    }
+
+    // create the slot
+    console.log("creating slot");
+    const [createdSlotId, slotCreateError] = await tryCatcher(
+      slotService.createOne({
+        date: slot.date,
+        time_start: slot.time_start,
+        time_end: slot.time_end,
+        slot_definition: slotDefinition.id,
+        schedule: slotDefinition.variant.service.schedule.id,
+      })
+    );
+    if (slotCreateError) {
+      context.logger.error(
+        `Error while creating slot ${slot.date} (${slot.time_start} - ${slot.time_end}): ${slotCreateError}`
+      );
+      return "Internal server error while creating slot";
+    }
+
+    // create reservation
+    console.log("creating reservation");
+    const [_, reservationCreateError] = await tryCatcher(
+      reservationService.createOne({
+        user: user.id,
+        slot: createdSlotId,
+        status: "held",
+      })
+    );
+    if (slotReadError) {
+      context.logger.error(
+        `Error while creating reservation: ${reservationCreateError}`
+      );
+      return "Internal server error while creating reservation";
+    }
   }
 
   return null;
 };
 
-const deleteSlotsFromCart = async (
-  schema: any,
-  context: any,
-  slotIds: any[],
-  cartID: any
-) => {
+const readUserHeldSlots = async (context: any, schema: any, user: any) => {
   const { ItemsService } = context.services;
-  const cartsSlotsService = new ItemsService("carts_slots", {
+  const slotService = new ItemsService("slots", {
     schema: schema,
   });
 
-  const [_, deleteError] = await tryCatcher(
-    cartsSlotsService.deleteByQuery({
+  const [slots, slotsReadError] = await tryCatcher<any[]>(
+    slotService.readByQuery({
+      fields: [
+        "date",
+        "time_start",
+        "time_end",
+        "slot_definition.id",
+        "slot_definition.variant.id",
+        "slot_definition.variant.service.id",
+      ],
       filter: {
-        _and: [
-          {
-            carts_id: {
-              _eq: cartID,
+        reservations: {
+          user: {
+            id: {
+              _eq: user.id,
             },
           },
-          {
-            _or: [
-              {
-                slots_id: {
-                  _nin: slotIds,
-                },
-              },
-              {
-                slots_id: {
-                  date: {
-                    date: {
-                      _lt: "$NOW",
-                    },
-                  },
-                },
-              },
-            ],
+          status: {
+            _eq: "held",
           },
-        ],
+        },
       },
     })
   );
+  if (slotsReadError) {
+    context.logger.error(
+      `Error while reading user held slots: ${slotsReadError}`
+    );
+    return [null, "Internal server error while reading user held slots"];
+  }
 
-  return deleteError;
+  return [
+    slots.map((slot) => ({
+      date: slot.date,
+      time_start: slot.time_start,
+      time_end: slot.time_end,
+      slot_definition: slot.slot_definition,
+    })),
+    null,
+  ];
 };
 
-const updateCartDateField = async (
-  schema: any,
-  context: any,
-  cartID: any,
-  service: any
-) => {
-  const { ItemsService } = context.services;
-  const cartsService = new ItemsService("carts", {
-    schema: schema,
-  });
-
-  // update cart date_updated field
-  const [__, updateError] = await tryCatcher(
-    cartsService.updateOne(cartID, { date_updated: "$NOW", service: service })
-  );
-  if (updateError) {
-    context.logger.error(
-      `Something went wrong while updating cart date_updated field: ${updateError}`
-    );
-  }
+const timeToDate = (time: string) => {
+  const referenceDate = new Date(); // Any valid date
+  const timeDate = parse(time, "HH:mm:ss", referenceDate);
+  return timeDate;
 };
 
 async function tryCatcher<T, E = Error>(
