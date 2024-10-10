@@ -152,7 +152,6 @@ const validateSlots = async (
   // if valid, create it and create a reservation with status "held"
   for (let i = 0; i < slots.length; i++) {
     const slot = slots[i];
-    console.log("Slot ", i);
 
     // read extra data for this slot
     const [slotDefinition, slotDefinitionReadError] = await tryCatcher<any>(
@@ -185,14 +184,7 @@ const validateSlots = async (
       // return `No slot definition for slot: ${slot.slot_definition}`;
     }
 
-    console.log("slot definition exists");
-
     // find matching day_definition
-    console.log(
-      "slot weekday",
-      slot.date,
-      format(toZonedTime(slot.date, "Europe/Ljubljana"), "EEEE").toLowerCase()
-    );
     const matchingDayDefinition =
       slotDefinition.variant.service.schedule.day_definitions.find(
         (dayDefinition: any) =>
@@ -203,7 +195,6 @@ const validateSlots = async (
       );
     if (!matchingDayDefinition) continue;
 
-    console.log("matched day defitinion");
     // make sure slot's time start/end matches dayDefinition's time start/end
     const firstTimeStartDate = timeToDate(slot.time_start);
     const firstTimeEndDate = timeToDate(slot.time_end);
@@ -339,7 +330,6 @@ const validateSlots = async (
       // check if adding this slot would excess schedule dayDefinition specified capacity
       let capacitySum = intersectingSlots.length;
       if (capacitySum + 1 > matchingDayDefinition.capacity) {
-        console.log("exceeds dayDefintiion capacity");
         continue;
         // return "Cannot add the slot, it exceeded schedule capacity";
       }
@@ -351,14 +341,12 @@ const validateSlots = async (
         0
       );
       if (slotDefinitionCapacitySum + 1 > slotDefinition.capacity) {
-        console.log("exceeds slotDefinition capacity");
         continue;
         // return "Cannot add the slot, it exceeded slot definition capacity";
       }
     }
 
     // create the slot
-    console.log("creating slot");
     const [createdSlotId, slotCreateError] = await tryCatcher(
       slotService.createOne({
         date: slot.date,
@@ -376,7 +364,6 @@ const validateSlots = async (
     }
 
     // create reservation
-    console.log("creating reservation");
     const [_, reservationCreateError] = await tryCatcher(
       reservationService.createOne({
         user: user.id,
