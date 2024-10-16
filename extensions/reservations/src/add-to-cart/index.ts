@@ -358,12 +358,21 @@ const readUserHeldSlots = async (context: any, schema: any, user: any) => {
   const [slots, slotsReadError] = await tryCatcher<any[]>(
     slotService.readByQuery({
       fields: [
+        "id",
         "date",
         "time_start",
         "time_end",
         "slot_definition.id",
+        "slot_definition.price",
         "slot_definition.variant.id",
         "slot_definition.variant.service.id",
+        "reservations.user.id",
+        "reservations.slot.date",
+        "reservations.slot.time_start",
+        "reservations.slot.time_end",
+        "reservations.slot.slot_definition.id",
+        "reservations.slot.slot_definition.variant.id",
+        "reservations.slot.slot_definition.variant.service.id",
       ],
       filter: {
         reservations: {
