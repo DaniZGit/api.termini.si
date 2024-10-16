@@ -62,7 +62,7 @@ const getUser = async (req: any, context: any, schema: any) => {
     schema: schema,
   });
 
-  // get user with cart
+  // get user
   const [user, readError] = await tryCatcher<any>(
     usersService.readOne(req.accountability?.user, {
       fields: ["id"],
@@ -72,10 +72,7 @@ const getUser = async (req: any, context: any, schema: any) => {
     context.logger.error(
       `Something went wrong while fetching user(${req.accountability?.user})`
     );
-    return [
-      null,
-      "Internal server error while fetching user's cart reservation",
-    ];
+    return [null, "Internal server error while fetching user"];
   }
 
   return [user, ""];
@@ -286,36 +283,6 @@ const validateSlots = async (
               ],
             },
           ],
-          // _and: [
-          //   {
-          //     _or: [
-          //       {
-          //         time_start: {
-          //           _lt: slot.time_end,
-          //         },
-          //       },
-          //       {
-          //         time_start: {
-          //           _eq: slot.time_end,
-          //         },
-          //       },
-          //     ],
-          //   },
-          //   {
-          //     _or: [
-          //       {
-          //         time_end: {
-          //           _gt: slot.time_start,
-          //         },
-          //       },
-          //       {
-          //         time_end: {
-          //           _eq: slot.time_start,
-          //         },
-          //       },
-          //     ],
-          //   },
-          // ],
         },
       })
     );
