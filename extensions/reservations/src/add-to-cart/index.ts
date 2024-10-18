@@ -125,16 +125,24 @@ const validateSlots = async (
   const [_, slotsDeleteError] = await tryCatcher(
     slotService.deleteByQuery({
       filter: {
-        reservations: {
-          user: {
-            id: {
-              _eq: user.id,
+        _and: [
+          {
+            reservations: {
+              user: {
+                id: {
+                  _eq: user.id,
+                },
+              },
             },
           },
-          status: {
-            _eq: "held",
+          {
+            reservations: {
+              status: {
+                _eq: "held",
+              },
+            },
           },
-        },
+        ],
       },
     })
   );
@@ -358,33 +366,46 @@ const readUserHeldSlots = async (context: any, schema: any, user: any) => {
   const [slots, slotsReadError] = await tryCatcher<any[]>(
     slotService.readByQuery({
       fields: [
-        "id",
-        "date",
-        "time_start",
-        "time_end",
-        "slot_definition.id",
-        "slot_definition.price",
-        "slot_definition.variant.id",
-        "slot_definition.variant.service.id",
-        "reservations.user.id",
-        "reservations.slot.date",
-        "reservations.slot.time_start",
-        "reservations.slot.time_end",
-        "reservations.slot.slot_definition.id",
-        "reservations.slot.slot_definition.variant.id",
-        "reservations.slot.slot_definition.variant.service.id",
+        "*",
+        "slot_definition.*",
+        "slot_definition.variant.*",
+        "slot_definition.variant.service.*",
+        "reservations.*",
+        // "id",
+        // "date",
+        // "time_start",
+        // "time_end",
+        // "slot_definition.id",
+        // "slot_definition.price",
+        // "slot_definition.variant.id",
+        // "slot_definition.variant.service.id",
+        // "reservations.user.id",
+        // "reservations.slot.date",
+        // "reservations.slot.time_start",
+        // "reservations.slot.time_end",
+        // "reservations.slot.slot_definition.id",
+        // "reservations.slot.slot_definition.variant.id",
+        // "reservations.slot.slot_definition.variant.service.id",
       ],
       filter: {
-        reservations: {
-          user: {
-            id: {
-              _eq: user.id,
+        _and: [
+          {
+            reservations: {
+              user: {
+                id: {
+                  _eq: user.id,
+                },
+              },
             },
           },
-          status: {
-            _eq: "held",
+          {
+            reservations: {
+              status: {
+                _eq: "held",
+              },
+            },
           },
-        },
+        ],
       },
     })
   );
@@ -395,15 +416,7 @@ const readUserHeldSlots = async (context: any, schema: any, user: any) => {
     return [null, "Internal server error while reading user held slots"];
   }
 
-  return [
-    slots.map((slot) => ({
-      date: slot.date,
-      time_start: slot.time_start,
-      time_end: slot.time_end,
-      slot_definition: slot.slot_definition,
-    })),
-    null,
-  ];
+  return [slots, null];
 };
 
 const timeToDate = (time: string) => {

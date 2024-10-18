@@ -3,7 +3,7 @@ import { defineEndpoint } from "@directus/extensions-sdk";
 export default defineEndpoint((router, context) => {
   const { ItemsService, UsersService } = context.services;
 
-  router.patch("/", async (_req, res) => {
+  router.post("/", async (_req, res) => {
     const schema = await context.getSchema();
 
     // @ts-ignore
@@ -11,9 +11,11 @@ export default defineEndpoint((router, context) => {
     if (!_req.accountability || !_req.accountability?.user)
       return res.status(403).send("Forbidden");
 
-    // fetch user data (will be needed in case of paid by plan or paid by tokens)
+    // fetch user with reservations data
     const [user, userError] = await fetchUser(_req, schema);
     if (userError) return errorResponse(res, "Couldn't fetch user data", 500);
+    if (!user.reservations || !user.reservations.length)
+      return errorResponse(res, "User has no slots in the cart", 400);
 
     // check if plan reservations are being used
     let userPlan = null;
@@ -31,48 +33,32 @@ export default defineEndpoint((router, context) => {
       if (!userPlan) return errorResponse(res, "User has no such plan", 400);
     }
 
-    // get user's cart
-    const [cart, cartError] = await fetchUserCart(schema, user.cart);
-    if (cartError)
-      return errorResponse(
-        res,
-        "Internal server error while fetching user cart",
-        500
-      );
-    if (!cart) return errorResponse(res, "User doesnt have a cart", 400);
-
     if (userPlan) {
-      // validate user active plan
-      const valid = await validateUserCartWithPlan(_req, schema);
+      // validate user reservations with active plan
+      const valid = await validateReservationsViaPlan(_req, schema);
       if (!valid)
         return errorResponse(res, "Cart was invalidated by plan", 400);
 
       // user will reserve slots with active plan
-      const [_, planReservationError] = await reserveWithPlan(
-        _req,
-        schema,
-        userPlan,
-        cart
-      );
-      if (planReservationError)
+      const planCheckoutError = await checkoutWithPlan(schema, user, userPlan);
+      if (planCheckoutError)
         return errorResponse(res, "Couldnt reserve with plan", 500);
     } else {
-      const valid = await validateUserCartWithTokens(_req, schema);
+      const valid = await validateReservationsViaTokens(_req, schema);
       if (!valid)
         return errorResponse(res, "Cart was invalidated by tokens", 400);
 
       // user will reserve slots with spending tokens
-      const [_, tokensReservationError] = await reserveWithTokens(
+      const [_, tokensReservationError] = await checkoutWithTokens(
         _req,
         schema,
-        userPlan,
-        cart
+        userPlan
       );
       if (tokensReservationError)
         return errorResponse(res, "Couldnt reserve with tokens", 500);
     }
 
-    return res.status(200).send({ slots: slots });
+    return res.status(200).send();
   });
 
   const fetchUser = async (req: any, schema: any) => {
@@ -82,21 +68,12 @@ export default defineEndpoint((router, context) => {
 
     const [user, error] = await tryCatcher<any>(
       usersService.readOne(req.accountability?.user, {
-        fields: [
-          "id",
-          "tokens",
-          "plans.*",
-          "plans.plans_id.*",
-          "cart",
-          "slots",
-        ],
+        fields: ["*", "plans.*", "plans.plans_id.*", "reservations.*"],
         deep: {
-          slots: {
+          reservations: {
             _filter: {
-              date: {
-                date: {
-                  _gte: "$NOW",
-                },
+              status: {
+                _eq: "held",
               },
             },
           },
@@ -112,58 +89,64 @@ export default defineEndpoint((router, context) => {
     return [user, error];
   };
 
-  const fetchUserCart = async (schema: any, cartID: any) => {
-    const cartsService = new ItemsService("carts", {
+  /* @ts-ignore */
+  const validateReservationsViaPlan = (req: any, schema: any) => {
+    // check if ALL slots agree with plan rules
+
+    // be careful cause some plans are global, some are specific for service
+    return true;
+  };
+
+  /* @ts-ignore */
+  const validateReservationsViaTokens = (req: any, schema: any) => {
+    return true;
+  };
+
+  const checkoutWithPlan = async (schema: any, user: any, userPlan: any) => {
+    const reservationService = new ItemsService("reservations", {
+      schema: schema,
+    });
+    const userPlanService = new ItemsService("plans_directus_users", {
       schema: schema,
     });
 
-    const [cart, error] = await tryCatcher(
-      cartsService.readOne(cartID, {
-        fields: [
-          "id",
-          "service",
-          "slots.id",
-          "slots.price",
-          "slots.capacity",
-          "slots.date.date",
-        ],
-      })
+    // reserve slots
+    const [_, updateError] = await tryCatcher<any[]>(
+      reservationService.updateMany(
+        /* @ts-ignore */
+        user.reservations.map((reservation) => reservation.id),
+        {
+          status: "confirmed",
+        }
+      )
     );
-    if (error) {
+    if (updateError) {
       context.logger.error(
-        `Something went wrong while reading user's cart: ${error}`
+        `Something went wrong while confirming user reservations: ${updateError}`
       );
+      return "Something went wrong while trying to reserve user slots";
     }
 
-    return [cart, error];
+    // update user plan
+    const [__, planUpdateError] = await tryCatcher(
+      userPlanService.updateOne(userPlan.id, {
+        total_reservations:
+          userPlan.total_reservations - user.reservations.length,
+      })
+    );
+    if (planUpdateError) {
+      context.logger.error(
+        `Something went wrong while updating user plan: ${planUpdateError}`
+      );
+      return "Something went wrong while trying to reserve user slots";
+    }
+
+    return null;
   };
 
-  const validateUserCartWithPlan = (req: any, schema: any) => {
-    return true;
-  };
-
-  const validateUserCartWithTokens = (req: any, schema: any) => {
-    return true;
-  };
-
-  const reserveWithPlan = async (
-    req: any,
-    schema: any,
-    userPlan: any,
-    cart: any
-  ) => {
-    const trx = await context.database.transaction();
-
-    return [null, null];
-  };
-
-  const reserveWithTokens = async (
-    req: any,
-    schema: any,
-    userPlan: any,
-    cart: any
-  ) => {
-    return [null, null];
+  /* @ts-ignore */
+  const checkoutWithTokens = async (req: any, schema: any, userPlan: any) => {
+    return [null, "err"];
   };
 });
 
