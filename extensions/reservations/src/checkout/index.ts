@@ -49,11 +49,7 @@ export default defineEndpoint((router, context) => {
         return errorResponse(res, "Cart was invalidated by tokens", 400);
 
       // user will reserve slots with spending tokens
-      const [_, tokensReservationError] = await checkoutWithTokens(
-        _req,
-        schema,
-        userPlan
-      );
+      const tokensReservationError = await checkoutWithTokens(schema, user);
       if (tokensReservationError)
         return errorResponse(res, "Couldnt reserve with tokens", 500);
     }
@@ -68,7 +64,14 @@ export default defineEndpoint((router, context) => {
 
     const [user, error] = await tryCatcher<any>(
       usersService.readOne(req.accountability?.user, {
-        fields: ["*", "plans.*", "plans.plans_id.*", "reservations.*"],
+        fields: [
+          "*",
+          "plans.*",
+          "plans.plans_id.*",
+          "reservations.*",
+          "reservations.slot.*",
+          "reservations.slot.slot_definition.*",
+        ],
         deep: {
           reservations: {
             _filter: {
@@ -145,8 +148,52 @@ export default defineEndpoint((router, context) => {
   };
 
   /* @ts-ignore */
-  const checkoutWithTokens = async (req: any, schema: any, userPlan: any) => {
-    return [null, "err"];
+  const checkoutWithTokens = async (schema: any, user: any) => {
+    const reservationService = new ItemsService("reservations", {
+      schema: schema,
+    });
+    const usersService = new UsersService({
+      schema: schema,
+    });
+
+    // reserve slots
+    const [_, updateError] = await tryCatcher<any[]>(
+      reservationService.updateMany(
+        /* @ts-ignore */
+        user.reservations.map((reservation) => reservation.id),
+        {
+          status: "confirmed",
+        }
+      )
+    );
+    if (updateError) {
+      context.logger.error(
+        `Something went wrong while confirming user reservations: ${updateError}`
+      );
+      return "Something went wrong while trying to reserve user slots";
+    }
+
+    // update user's tokens amount
+    const [__, userUpdateError] = await tryCatcher(
+      usersService.updateOne(user.id, {
+        tokens:
+          user.tokens -
+          user.reservations.reduce(
+            (sum: number, reservation: any) =>
+              sum + reservation.slot.slot_definition.price,
+            0
+          ),
+      })
+    );
+
+    if (userUpdateError) {
+      context.logger.error(
+        `Something went wrong while updating user's tokens amount: ${userUpdateError}`
+      );
+      return "Something went wrong while trying to reserve user slots";
+    }
+
+    return null;
   };
 });
 
