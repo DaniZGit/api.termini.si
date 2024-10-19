@@ -23,6 +23,21 @@
 				"type": "hook",
 				"name": "hooks-on-users",
 				"source": "src/hooks-on-users/index.ts"
+			},
+			{
+				"type": "endpoint",
+				"name": "payment-intent",
+				"source": "src/payment-intent/index.ts"
+			},
+			{
+				"type": "endpoint",
+				"name": "payment-webhook",
+				"source": "src/payment-webhook/index.ts"
+			},
+			{
+				"type": "hook",
+				"name": "hooks-on-payment-webhook",
+				"source": "src/hooks-on-payment-webhook/index.ts"
 			}
 		],
 		"host": "^10.10.0"
@@ -35,10 +50,11 @@
 	},
 	"devDependencies": {
 		"@directus/extensions-sdk": "12.0.2",
-		"@types/node": "^22.5.5",
-		"typescript": "^5.6.2"
+		"@types/node": "^22.7.7",
+		"typescript": "^5.6.3"
 	},
 	"dependencies": {
+		"express": "^4.21.1",
 		"stripe": "^16.11.0"
 	}
 }
