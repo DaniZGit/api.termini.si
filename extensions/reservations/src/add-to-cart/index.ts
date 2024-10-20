@@ -222,6 +222,7 @@ const validateSlots = async (
           "slot_definition.id",
           "slot_definition.duration",
           "slot_definition.capacity",
+          "reservations.user.id",
         ],
         filter: {
           date: {
@@ -318,6 +319,17 @@ const validateSlots = async (
       if (slotDefinitionCapacitySum + 1 > slotDefinition.capacity) {
         continue;
         // return "Cannot add the slot, it exceeded slot definition capacity";
+      }
+
+      // check if intersecting slot is reserved by this user
+      const isReservedByActiveUser = intersectingSlots.some(
+        (intersectingSlot) =>
+          intersectingSlot.reservations.some(
+            (reservation: any) => reservation.user.id == user.id
+          )
+      );
+      if (isReservedByActiveUser) {
+        continue;
       }
     }
 
